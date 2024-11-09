@@ -1,0 +1,398 @@
+# Load necessary libraries
+library(shiny)
+library(shinydashboard)
+library(highcharter)
+library(DT)
+
+# Function to create Highcharts gauge with consistent sizing
+create_performance_gauge <- function(startup_value, peer_min, peer_avg, peer_max, title, max_value, unit) {
+  
+  highchart() %>%
+    hc_chart(
+      type = "gauge",
+      plotBorderWidth = 0,
+      height = 250,  # Set a fixed height for consistency
+      animation = FALSE,
+      backgroundColor = "#f5f5f5"
+    ) %>%
+    hc_title(
+      text = title,
+      style = list(fontSize = "16px", fontFamily = "Roboto", fontWeight = "bold", color = "#333333"),
+      align = "center",
+      verticalAlign = "top",
+      y = 20
+    ) %>%
+    hc_pane(
+      startAngle = -90,
+      endAngle = 90,
+      background = list(
+        backgroundColor = '#FFFFFF',
+        innerRadius = '60%',
+        outerRadius = '100%',
+        shape = 'arc'
+      ),
+      center = c("50%", "60%"),
+      size = "100%"
+    ) %>%
+    hc_yAxis(
+      min = 0,
+      max = max_value,
+      tickPositions = seq(0, max_value, by = max_value / 5),
+      tickLength = 5,
+      tickWidth = 1,
+      tickColor = "#666666",
+      labels = list(
+        distance = -15,
+        style = list(fontSize = "10px", fontFamily = "Roboto", color = "#333333")
+      ),
+      lineWidth = 0,
+      plotBands = list(
+        list(from = as.numeric(peer_min), to = as.numeric(peer_max), color = '#1E90FF', thickness = 15, zIndex = 5),
+        list(from = 0, to = as.numeric(peer_min), color = '#D3D3D3', thickness = 15),
+        list(from = as.numeric(peer_max), to = max_value, color = '#D3D3D3', thickness = 15)
+      )
+    ) %>%
+    hc_add_series(
+      name = title,
+      data = list(as.numeric(startup_value)),
+      dataLabels = list(
+        format = paste0("{y}", unit),
+        borderWidth = 0,
+        color = "#000000",
+        style = list(fontSize = "14px", fontFamily = "Roboto", fontWeight = "bold"),
+        y = -40
+      ),
+      dial = list(
+        radius = "90%",
+        backgroundColor = "#FF4500",
+        baseWidth = 8,
+        rearLength = "0%"
+      ),
+      pivot = list(
+        backgroundColor = "#FF4500",
+        radius = 5
+      )
+    ) %>%
+    hc_tooltip(enabled = FALSE)
+}
+
+# Define UI using shinydashboard
+ui <- dashboardPage(
+  dashboardHeader(title = tags$div(
+    tags$img(src = 'https://i.imgur.com/yK6H3Ic.png', height = '30', style = 'margin-right:10px;'),
+    "Startup Performance Dashboard"
+  )),
+  dashboardSidebar(disable = TRUE),
+  dashboardBody(
+    # Include Google Font
+    tags$head(
+      tags$link(rel = "stylesheet", href = "https://fonts.googleapis.com/css2?family=Roboto&display=swap"),
+      tags$style(HTML("
+        /* Custom CSS */
+        .content-wrapper, .right-side {
+          background-color: #f5f5f5;
+        }
+        .main-header .logo {
+          background-color: #003366;
+          color: #FFFFFF;
+          font-family: 'Roboto', sans-serif;
+          font-size: 18px;
+        }
+        .main-header .navbar {
+          background-color: #003366;
+        }
+        .explanation {
+          font-size: 13px;
+          font-family: 'Roboto', sans-serif;
+          color: #333333;
+          text-align: center;
+          margin-top: 5px;
+        }
+        .company-description {
+          font-size: 15px;
+          font-family: 'Roboto', sans-serif;
+          color: #333333;
+          margin-bottom: 20px;
+          padding: 20px;
+          background-color: #FFFFFF;
+          border-radius: 5px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .box {
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          border: none;
+          background-color: #FFFFFF;
+        }
+        .data-table {
+          margin-top: 20px;
+        }
+        .stage-buttons {
+          margin-bottom: 20px;
+          text-align: center;
+        }
+        .stage-buttons .btn {
+          background-color: #00509e;
+          color: #FFFFFF;
+          border: none;
+          margin: 0 5px;
+          font-family: 'Roboto', sans-serif;
+          font-size: 14px;
+        }
+        .stage-buttons .btn.active {
+          background-color: #003366;
+        }
+        .gauge-box {
+          height: 320px;
+          background-color: #FFFFFF;
+          border-radius: 5px;
+          padding-top: 10px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          margin: 0 10px; /* Add space to left and right */
+        }
+        .gauge-container {
+          flex-grow: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+        }
+        .main-header .logo, .main-header .navbar {
+          background-color: #003366 !important;
+        }
+        /* Peer Group Box Styling */
+        .box-peer {
+          background-color: #FFFFFF;
+          border-radius: 5px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          padding: 20px;
+        }
+        .box-peer .box-title {
+          font-family: 'Roboto', sans-serif;
+          font-size: 16px;
+          font-weight: bold;
+          color: #333333;
+          border-bottom: 1px solid #e5e5e5;
+          padding-bottom: 10px;
+          margin-bottom: 20px;
+        }
+        .main-header .logo, .main-header .navbar {
+          background-color: #003366 !important;
+        }
+      "))
+    ),
+    fluidRow(
+      div(class = "stage-buttons",
+          radioButtons("stage", NULL,
+                       choices = c("Early Stage", "Growth Stage", "Expansion Stage", "Late Stage"),
+                       selected = "Early Stage",
+                       inline = TRUE)
+      )
+    ),
+    fluidRow(
+      box(
+        width = 12,
+        div(class = "company-description",
+            htmlOutput("company_description")
+        )
+      )
+    ),
+    fluidRow(
+      uiOutput("gauge_boxes")  # Dynamically generate gauge boxes based on KPIs
+    ),
+    fluidRow(
+      div(class = "box box-peer",
+          div(class = "box-title", "Peer Group Comparison"),
+          DTOutput("peer_table")
+      )
+    )
+  )
+)
+
+# Define server logic
+server <- function(input, output, session) {
+  
+  # Reactive data based on selected stage
+  data_reactive <- reactive({
+    stage <- input$stage
+    startup_name <- "TechNova Inc."
+    
+    if (stage == "Early Stage") {
+      # Early Stage KPIs and data
+      display_kpis <- c("Customer Acquisition Cost", "Burn Rate", "Runway", "Monthly Active Users")
+      data_kpis <- c("CAC", "BurnRate", "Runway", "MAU")
+      units <- c("$", "$", " months", "")
+      peer_data <- data.frame(
+        Company = c("MediAI Solutions", "HealthTech Labs", "BioAnalytics Corp.", startup_name),
+        CAC = c(200, 220, 210, 190),
+        BurnRate = c(30000, 35000, 32000, 40000),
+        Runway = c(12, 10, 14, 16),
+        MAU = c(5000, 7000, 6000, 8000)
+      )
+      max_values <- list(CAC = 250, BurnRate = 50000, Runway = 24, MAU = 10000)
+      
+    } else if (stage == "Growth Stage") {
+      # Growth Stage KPIs and data
+      display_kpis <- c("Revenue Growth Rate", "Customer Lifetime Value", "Churn Rate", "Burn Rate")
+      data_kpis <- c("RevenueGrowth", "LTV", "ChurnRate", "BurnRate")
+      units <- c("%", "$", "%", "$")
+      peer_data <- data.frame(
+        Company = c("MediAI Solutions", "HealthTech Labs", "BioAnalytics Corp.", startup_name),
+        RevenueGrowth = c(25, 30, 28, 35),
+        LTV = c(1000, 1200, 1100, 1300),
+        ChurnRate = c(5, 6, 5.5, 4),
+        BurnRate = c(50000, 55000, 52000, 60000)
+      )
+      max_values <- list(RevenueGrowth = 50, LTV = 1500, ChurnRate = 10, BurnRate = 70000)
+      
+    } else if (stage == "Expansion Stage") {
+      # Expansion Stage KPIs and data
+      display_kpis <- c("Market Share", "International Revenue", "EBITDA", "Net Promoter Score")
+      data_kpis <- c("MarketShare", "InternationalRevenue", "EBITDA", "NPS")
+      units <- c("%", "%", "$", "")
+      peer_data <- data.frame(
+        Company = c("MediAI Solutions", "HealthTech Labs", "BioAnalytics Corp.", startup_name),
+        MarketShare = c(10, 12, 11, 15),
+        InternationalRevenue = c(30, 35, 32, 40),
+        EBITDA = c(200000, 220000, 210000, 250000),
+        NPS = c(60, 65, 62, 70)
+      )
+      max_values <- list(MarketShare = 20, InternationalRevenue = 50, EBITDA = 300000, NPS = 100)
+      
+    } else if (stage == "Late Stage") {
+      # Late Stage KPIs and data
+      display_kpis <- c("EBITDA Margin", "Return on Investment", "Debt-to-Equity Ratio", "Earnings Per Share")
+      data_kpis <- c("EBITDAMargin", "ROI", "DebtToEquity", "EPS")
+      units <- c("%", "%", "", "$")
+      peer_data <- data.frame(
+        Company = c("MediAI Solutions", "HealthTech Labs", "BioAnalytics Corp.", startup_name),
+        EBITDAMargin = c(20, 22, 21, 25),
+        ROI = c(15, 18, 16, 20),
+        DebtToEquity = c(0.5, 0.6, 0.55, 0.4),
+        EPS = c(2.5, 2.8, 2.6, 3.0)
+      )
+      max_values <- list(EBITDAMargin = 30, ROI = 25, DebtToEquity = 1, EPS = 4)
+    }
+    
+    # Calculate peer group statistics (excluding the startup)
+    peer_stats <- peer_data[peer_data$Company != startup_name, ]
+    
+    # Prepare metrics
+    peer_metrics <- list()
+    for (i in seq_along(display_kpis)) {
+      kpi_display <- display_kpis[i]
+      kpi_data <- data_kpis[i]
+      unit <- units[i]
+      startup_value <- peer_data[peer_data$Company == startup_name, kpi_data]
+      peer_values <- peer_stats[[kpi_data]]
+      peer_metrics[[kpi_display]] <- list(
+        min = min(peer_values),
+        avg = mean(peer_values),
+        max = max(peer_values),
+        startup_value = startup_value,
+        max_value = max_values[[kpi_data]],
+        unit = unit
+      )
+    }
+    
+    list(
+      startup_name = startup_name,
+      peer_data = peer_data,
+      peer_metrics = peer_metrics,
+      display_kpis = display_kpis,
+      data_kpis = data_kpis
+    )
+  })
+  
+  # Generate dynamic gauges based on KPIs
+  output$gauge_boxes <- renderUI({
+    metrics <- data_reactive()$peer_metrics
+    display_kpis <- data_reactive()$display_kpis
+    boxes <- lapply(display_kpis, function(kpi_display) {
+      box(
+        width = 3,
+        class = "gauge-box",
+        div(class = "gauge-container",
+            highchartOutput(paste0("gauge_", gsub("[^A-Za-z0-9]", "_", kpi_display)), height = "100%")
+        ),
+        div(class = "explanation", textOutput(paste0("explanation_", gsub("[^A-Za-z0-9]", "_", kpi_display))))
+      )
+    })
+    do.call(fluidRow, boxes)
+  })
+  
+  # Render gauges and explanations
+  observe({
+    metrics <- data_reactive()$peer_metrics
+    display_kpis <- data_reactive()$display_kpis
+    for (kpi_display in display_kpis) {
+      kpi_id <- gsub("[^A-Za-z0-9]", "_", kpi_display)
+      local({
+        kpi_local <- kpi_display
+        kpi_id_local <- kpi_id
+        metric <- metrics[[kpi_local]]
+        
+        output[[paste0("gauge_", kpi_id_local)]] <- renderHighchart({
+          create_performance_gauge(
+            startup_value = metric$startup_value,
+            peer_min = metric$min,
+            peer_avg = metric$avg,
+            peer_max = metric$max,
+            title = paste0(kpi_local),
+            max_value = metric$max_value,
+            unit = metric$unit
+          )
+        })
+        
+        output[[paste0("explanation_", kpi_id_local)]] <- renderText({
+          paste("TechNova's", kpi_local, "is", metric$startup_value, metric$unit, ", compared to the peer group's range of", metric$min, "to", metric$max, metric$unit, ".")
+        })
+      })
+    }
+  })
+  
+  # Company Description
+  output$company_description <- renderUI({
+    HTML("<strong>Company Overview:</strong><br>
+         <em>TechNova Inc.</em> is a pioneering company at the forefront of artificial intelligence solutions in the healthcare sector. Our flagship product leverages advanced machine learning algorithms to provide predictive analytics for patient care, enabling healthcare providers to make data-driven decisions. Operating within a rapidly expanding market segment, TechNova addresses critical needs such as early disease detection, personalized treatment plans, and operational efficiency for hospitals and clinics.<br><br>
+         
+         <strong>Market Segment:</strong><br>
+         The global healthcare AI market is projected to reach $45 billion by 2026, with a compound annual growth rate (CAGR) of over 40%. TechNova is strategically positioned to capitalize on this growth by focusing on scalable, cloud-based solutions that can be seamlessly integrated into existing healthcare systems.<br><br>
+         
+         <strong>Products and Services:</strong><br>
+         - <em>AI Diagnostic Tool:</em> An AI-powered platform that analyzes medical imaging data to assist in early detection of diseases.<br>
+         - <em>Patient Data Analytics:</em> A service that aggregates and analyzes patient data to identify trends and improve care outcomes.<br>
+         - <em>Operational Efficiency Suite:</em> Software solutions aimed at optimizing scheduling, resource allocation, and administrative tasks within healthcare facilities.<br><br>
+         
+         <strong>Competitive Advantage:</strong><br>
+         TechNova's competitive edge lies in its proprietary algorithms, a dedicated R&D team with expertise in both AI and healthcare, and strategic partnerships with leading hospitals and research institutions. Our commitment to innovation and quality positions us ahead of competitors in delivering effective and reliable AI solutions for healthcare.")
+  })
+  
+  # Peer Group Data Table
+  output$peer_table <- renderDT({
+    peer_data <- data_reactive()$peer_data
+    startup_name <- data_reactive()$startup_name
+    display_kpis <- data_reactive()$display_kpis
+    # Adjust column names
+    colnames(peer_data) <- c("Company", display_kpis)
+    
+    datatable(
+      peer_data,
+      options = list(pageLength = 5, dom = 't', ordering = FALSE),
+      rownames = FALSE,
+      style = "bootstrap",
+      class = "table-striped table-bordered",
+      escape = FALSE
+    ) %>%
+      formatStyle(
+        'Company',
+        target = 'row',
+        backgroundColor = styleEqual(startup_name, '#e6f2ff')
+      )
+  })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
