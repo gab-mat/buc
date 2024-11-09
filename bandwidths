@@ -1,0 +1,147 @@
+# app.R
+
+library(shiny)
+library(highcharter)
+library(dplyr)
+
+# Sample data with unique values for each industry and period
+data <- data.frame(
+  industry = rep(c("Manufacturing", "Healthcare", "Technology", "Finance", "Retail"), times = 2),
+  calculation_type = "Levered",
+  periods = rep(c("Two Periods", "Three Periods"), each = 5),
+  lower_bound = c(5, 7, 6.5, 8, 9.5, 5.5, 7.2, 6.8, 8.2, 9.8),
+  upper_bound = c(15, 17, 16.5, 18, 19.5, 15.5, 17.2, 16.8, 18.2, 19.8),
+  lower_max_bound = c(4, 6, 5.5, 7, 8.5, 4.5, 6.2, 5.8, 7.2, 8.8),
+  upper_max_bound = c(16, 18, 17.5, 19, 20.5, 16.5, 18.2, 17.8, 19.2, 20.8),
+  debt_to_equity_ratio = rep(c(0.3, 0.4, 0.5, 0.6, 0.2), times = 2)
+)
+
+# Assume a constant tax rate
+tax_rate <- 0.21
+
+# Calculate unlevered bounds based on Modigliani-Miller formula
+data <- data %>%
+  mutate(
+    lower_unlevered_bound = round(lower_bound / (1 + (1 - tax_rate) * debt_to_equity_ratio), 1),
+    upper_unlevered_bound = round(upper_bound / (1 + (1 - tax_rate) * debt_to_equity_ratio), 1),
+    lower_unlevered_max_bound = round(lower_max_bound / (1 + (1 - tax_rate) * debt_to_equity_ratio), 1),
+    upper_unlevered_max_bound = round(upper_max_bound / (1 + (1 - tax_rate) * debt_to_equity_ratio), 1)
+  )
+
+# UI for the Shiny app
+ui <- fluidPage(
+  titlePanel("Industry Implied Cost of Equity Tornado Chart"),
+  sidebarLayout(
+    sidebarPanel(
+      h4("Options"),
+      selectInput("calc_type", "Calculation Type:", choices = c("Levered", "Unlevered"), selected = "Levered"),
+      selectInput("period", "Periods for Calculation:", choices = c("Two Periods", "Three Periods"), selected = "Two Periods"),
+      checkboxInput("show_max_bounds", "Show Maximum Bounds", value = FALSE),
+      checkboxInput("show_table", "Show Full Data Table", value = FALSE)
+    ),
+    mainPanel(
+      highchartOutput("tornado_chart", height = "500px"),
+      br(),
+      conditionalPanel(
+        condition = "input.show_table",
+        tableOutput("full_data_table")  # Display all data here
+      )
+    )
+  )
+)
+
+# Server logic for the Shiny app
+server <- function(input, output, session) {
+  # Reactive data for the chart based on selected options
+  filtered_data <- reactive({
+    data %>%
+      filter(periods == input$period) %>%
+      mutate(
+        lower_bound = ifelse(input$calc_type == "Unlevered", lower_unlevered_bound, lower_bound),
+        upper_bound = ifelse(input$calc_type == "Unlevered", upper_unlevered_bound, upper_bound),
+        lower_max_bound = ifelse(input$calc_type == "Unlevered", lower_unlevered_max_bound, lower_max_bound),
+        upper_max_bound = ifelse(input$calc_type == "Unlevered", upper_unlevered_max_bound, upper_max_bound)
+      )
+  })
+  
+  # Render the chart with filtered data
+  output$tornado_chart <- renderHighchart({
+    chart_data <- filtered_data()
+    
+    hc <- highchart() %>%
+      hc_chart(type = "columnrange", inverted = TRUE) %>%
+      hc_xAxis(categories = chart_data$industry,
+               title = list(text = "Industries"),
+               labels = list(style = list(fontSize = "13px")),
+               reversed = TRUE) %>%
+      hc_yAxis(title = list(text = "Implied Cost of Equity (%)"),
+               labels = list(format = "{value}%"),
+               min = 0,
+               max = 20) %>%
+      hc_plotOptions(series = list(
+        dataLabels = list(enabled = TRUE),
+        grouping = FALSE
+      ))
+    
+    # Add the maximum bounds range (with transparency)
+    if (input$show_max_bounds) {
+      hc <- hc %>%
+        hc_add_series(
+          name = "Max Bound Range",
+          data = list_parse2(data.frame(
+            low = chart_data$lower_max_bound,
+            high = chart_data$upper_max_bound
+          )),
+          color = "rgba(51, 195, 255, 0.5)",  
+          zIndex = 0,
+          pointWidth = 15,
+          borderWidth = 1,
+          borderColor = "#33C3FF"
+        )
+    }
+    
+    # Add the main range bar on top (without transparency)
+    hc <- hc %>%
+      hc_add_series(
+        name = "Implied Cost of Equity Range",
+        data = list_parse2(data.frame(
+          low = chart_data$lower_bound,
+          high = chart_data$upper_bound
+        )),
+        color = "#FF9933",  
+        zIndex = 1,
+        pointWidth = 15,
+        borderWidth = 1,
+        borderColor = "#FF9933"
+      )
+    
+    hc <- hc %>%
+      hc_tooltip(shared = TRUE, valueSuffix = "%") %>%
+      hc_title(text = "Industry Implied Cost of Equity Comparison") %>%
+      hc_legend(enabled = TRUE)
+    
+    hc
+  })
+  
+  # Render the full data table with all information
+  output$full_data_table <- renderTable({
+    data %>%
+      select(
+        Industry = industry,
+        `Calculation Type` = calculation_type,
+        Periods = periods,
+        `Lower Bound (Levered)` = lower_bound,
+        `Upper Bound (Levered)` = upper_bound,
+        `Lower Max Bound (Levered)` = lower_max_bound,
+        `Upper Max Bound (Levered)` = upper_max_bound,
+        `Lower Bound (Unlevered)` = lower_unlevered_bound,
+        `Upper Bound (Unlevered)` = upper_unlevered_bound,
+        `Lower Max Bound (Unlevered)` = lower_unlevered_max_bound,
+        `Upper Max Bound (Unlevered)` = upper_unlevered_max_bound,
+        `Debt to Equity Ratio` = debt_to_equity_ratio
+      )
+  }, rownames = FALSE)
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
