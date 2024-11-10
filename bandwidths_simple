@@ -1,0 +1,148 @@
+# Load necessary libraries
+library(shiny)
+library(highcharter)
+
+# Updated data
+industry_data <- data.frame(
+  industry = c(
+    "Materials",
+    "Consumer Discretionary",
+    "Industrials",
+    "Real Estate",
+    "Communication Services",
+    "Energy",
+    "Financials",
+    "Utilities",
+    "Information Technology",
+    "Consumer Staples",
+    "Health Care"
+  ),
+  min_return = c(5.3, 5.5, 5.2, 4.9, 4.9, 5.8, 5.0, 4.7, 5.4, 5.5, 5.3),
+  max_return = c(8.6, 8.9, 9.1, 8.9, 8.8, 11.4, 8.5, 9.1, 9.9, 9.1, 8.8)
+)
+
+# Prepare data for plotting
+industry_data$index <- seq_len(nrow(industry_data)) - 1  # Zero-based indexing for Highcharts
+
+# Define UI for Shiny app
+ui <- fluidPage(
+  titlePanel("Implied Industry Returns"),
+  highchartOutput("tornadoChart", height = "800px")  # Increased chart height
+)
+
+# Define server logic
+server <- function(input, output) {
+  output$tornadoChart <- renderHighchart({
+    
+    highchart() %>%
+      hc_chart(type = "bar", inverted = TRUE) %>%
+      
+      hc_title(text = "Implied Industry Returns") %>%
+      
+      hc_xAxis(
+        categories = industry_data$industry,
+        title = list(text = "Industry"),
+        reversed = FALSE
+      ) %>%
+      
+      hc_yAxis(
+        title = list(text = "Implied Return (%)"),
+        min = 0,
+        max = 20  # Set y-axis bounds from 0% to 20%
+      ) %>%
+      
+      hc_plotOptions(
+        series = list(
+          grouping = FALSE,
+          pointPadding = 0.1,
+          groupPadding = 0,
+          # Disable hover and inactive states
+          states = list(
+            hover = list(enabled = FALSE),
+            inactive = list(enabled = FALSE)
+          )
+        )
+      ) %>%
+      
+      # Main columnrange series for the bars
+      hc_add_series(
+        data = list_parse(
+          data.frame(
+            x = industry_data$index,
+            low = industry_data$min_return,
+            high = industry_data$max_return,
+            industry = industry_data$industry  # Add industry for tooltip
+          )
+        ),
+        type = "columnrange",
+        name = "Implied Return Range",
+        color = "#1f78b4",
+        showInLegend = FALSE,
+        enableMouseTracking = TRUE  # Enable mouse tracking for tooltips
+      ) %>%
+      
+      # Lower bound labels as a separate scatter series
+      hc_add_series(
+        data = list_parse(
+          data.frame(
+            x = industry_data$index,
+            y = industry_data$min_return,
+            label = sprintf("%.1f%%", industry_data$min_return)
+          )
+        ),
+        type = "scatter",
+        name = "Lower Bound",
+        marker = list(enabled = FALSE),
+        dataLabels = list(
+          enabled = TRUE,
+          align = "right",
+          x = -5,
+          verticalAlign = "middle",
+          style = list(fontSize = "12px"),
+          formatter = JS("function() { return this.point.label; }")
+        ),
+        showInLegend = FALSE,
+        enableMouseTracking = FALSE  # Disable hover effect on labels
+      ) %>%
+      
+      # Upper bound labels as a separate scatter series
+      hc_add_series(
+        data = list_parse(
+          data.frame(
+            x = industry_data$index,
+            y = industry_data$max_return,
+            label = sprintf("%.1f%%", industry_data$max_return)
+          )
+        ),
+        type = "scatter",
+        name = "Upper Bound",
+        marker = list(enabled = FALSE),
+        dataLabels = list(
+          enabled = TRUE,
+          align = "left",
+          x = 5,
+          verticalAlign = "middle",
+          style = list(fontSize = "12px"),
+          formatter = JS("function() { return this.point.label; }")
+        ),
+        showInLegend = FALSE,
+        enableMouseTracking = FALSE  # Disable hover effect on labels
+      ) %>%
+      
+      # Add tooltip back in
+      hc_tooltip(
+        shared = FALSE,
+        formatter = JS("
+          function() {
+            return '<b>' + this.point.industry + '</b><br/>' +
+                   'Implied Return Range: <b>' +
+                   this.point.low.toFixed(1) + '% - ' +
+                   this.point.high.toFixed(1) + '%</b>';
+          }
+        ")
+      )
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
